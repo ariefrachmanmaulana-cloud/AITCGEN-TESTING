@@ -42,16 +42,8 @@ def count_csv_rows(csv_string: str) -> int:
     try:
         # Gunakan StringIO untuk memperlakukan string sebagai file
         string_io = io.StringIO(csv_string)
-        
-        # Bersihkan baris kosong yang mungkin muncul di awal/akhir
-        lines = [line for line in string_io if line.strip()]
-        
-        if not lines:
-            return 0
-            
-        # Gunakan StringIO lagi dari lines yang sudah dibersihkan
-        cleaned_string_io = io.StringIO(''.join(lines))
-        reader = csv.reader(cleaned_string_io)
+        # Gunakan csv.reader untuk menangani berbagai format CSV (termasuk kutipan)
+        reader = csv.reader(string_io)
         
         row_count = 0
         for _ in reader:
@@ -63,60 +55,7 @@ def count_csv_rows(csv_string: str) -> int:
         # Jika terjadi error parsing, kembalikan 0
         return 0
 
-# --- FUNGSI BARU UNTUK POST-PROCESSING METADATA ---
-def enforce_metadata_on_csv(csv_string: str, labels: str, coverage: str) -> str:
-    """
-    Memastikan kolom Labels dan Coverage di setiap baris data CSV 
-    sesuai dengan nilai yang diinput pengguna.
-    """
-    if not csv_string:
-        return ""
-        
-    try:
-        string_io = io.StringIO(csv_string)
-        output_io = io.StringIO()
-        
-        # Menggunakan csv.reader dan csv.writer untuk penanganan CSV yang benar
-        reader = csv.reader(string_io)
-        # Quoting harus sesuai dengan yang diinstruksikan ke Gemini (minimal)
-        writer = csv.writer(output_io, quoting=csv.QUOTE_MINIMAL) 
-        
-        # Baca Header
-        header = next(reader)
-        writer.writerow(header)
-        
-        # Cari indeks kolom yang akan di-overwrite
-        header_map = {name.strip(): i for i, name in enumerate(header)}
-        
-        labels_index = header_map.get('Labels')
-        coverage_index = header_map.get('Coverage (Issues)')
-        
-        if labels_index is None or coverage_index is None:
-            # Jika header tidak ditemukan, kembalikan string asli
-            return csv_string 
-
-        # Baca Data (Baris demi Baris)
-        for row in reader:
-            # Lakukan validasi dasar baris
-            if not row or len(row) < len(header):
-                continue
-                
-            # Overwrite nilai Labels dan Coverage
-            row[labels_index] = labels
-            row[coverage_index] = coverage
-            
-            # Tulis baris yang sudah dimodifikasi
-            writer.writerow(row)
-            
-        # Kembalikan string dari buffer, dan hilangkan spasi/newline di akhir
-        return output_io.getvalue().strip()
-        
-    except Exception as e:
-        # Fallback jika ada masalah parsing CSV
-        st.warning(f"Gagal melakukan post-processing metadata pada CSV: {e}. Menggunakan hasil mentah.")
-        return csv_string
-
-# --- FUNGSI IDENTIFIKASI FITUR/MENU BARU (TIDAK BERUBAH) ---
+# --- FUNGSI IDENTIFIKASI FITUR/MENU BARU ---
 
 def extract_action_tag(prompt: str, default_tag: str = "GenericAction") -> str:
     """
@@ -175,7 +114,7 @@ def extract_project_acronym(prompt: str, default_acronym: str = "DPIA") -> str:
     return default_acronym 
 
 
-# --- FUNGSI GEMINI API CORE (TIDAK BERUBAH) ---
+# --- FUNGSI GEMINI API CORE ---
 
 @st.cache_resource
 def get_gemini_client(api_key):
@@ -223,7 +162,7 @@ def upload_files_to_gemini(client: genai.Client, uploaded_files: list) -> list:
                 
     return uploaded_gemini_files
 
-# FUNGSI GENERATOR DIPERBARUI DENGAN LOGIC PEMBERSIH HEADER DAN ENFORCE METADATA
+# FUNGSI GENERATOR DIPERBARUI DENGAN INSTRUKSI BARU
 def generate_test_cases_with_ai(
     client: genai.Client, 
     user_prompt: str, 
@@ -255,44 +194,44 @@ def generate_test_cases_with_ai(
         "Your output MUST be a raw CSV string with the following columns: "
         "Name,Status,Precondition,Objective,Estimated Time,Labels,Coverage (Issues),Automation,Test Type,Test Script (BDD). "
         
-        "DOCUMENT ANALYSIS PRIORITY:\n"
-        "1. MANDATORY CONTEXT: You MUST deeply analyze and integrate information from ALL provided documents (PDF, Figma/PNG/JPG/JPEG) to ensure the test cases are accurate and comprehensive.\n"
-        "2. COMBINED ANALYSIS: Treat all documents and the user prompt as a single, combined source of truth. Use the UI elements, fields, error messages, and business logic described in the documents to fulfill the user's specific request/Acceptance Criteria (AC).\n"
-        "3. VERBATIM EXTRACTION: Specifically, extract and use verbatim (sesuai) text from the Figma/UI images for: Menu Names, Button Labels, Column Headers, and Error Messages in the 'Name' and 'Test Script (BDD)' columns.\n"
+        "**DOCUMENT ANALYSIS PRIORITY:**\n"
+        "1. **MANDATORY CONTEXT:** You MUST deeply analyze and integrate information from ALL provided documents (PDF, Figma/PNG/JPG/JPEG) to ensure the test cases are accurate and comprehensive.\n"
+        "2. **COMBINED ANALYSIS:** Treat all documents and the user prompt as a single, combined source of truth. Use the UI elements, fields, error messages, and business logic described in the documents to fulfill the user's specific request/Acceptance Criteria (AC).\n"
+        "3. **VERBATIM EXTRACTION:** Specifically, extract and use verbatim (sesuai) text from the Figma/UI images for: Menu Names, Button Labels, Column Headers, and Error Messages in the 'Name' and 'Test Script (BDD)' columns.\n"
         
-        "STRICT FORMATTING AND CONTENT RULES:\n"
-        "1. Language: All text, including BDD Gherkin steps, MUST be in English.\n"
-        "2. Figma/UI Consistency: All text related to UI elements used in the 'Name' and 'Test Script (BDD)' columns MUST be copied verbatim (disesuaikan) from the provided Figma/Mockup images and documents, as described in the 'MANDATORY CONTEXT' above.\n"
-        "3. Default Values: Use the following values for all generated test cases:\n"
+        "**STRICT FORMATTING AND CONTENT RULES:**\n"
+        "1. **Language:** All text, including BDD Gherkin steps, MUST be in English.\n"
+        "2. **Figma/UI Consistency:** All text related to UI elements used in the 'Name' and 'Test Script (BDD)' columns MUST be copied verbatim (disesuaikan) from the provided Figma/Mockup images and documents, as described in the 'MANDATORY CONTEXT' above.\n"
+        "3. **Default Values:** Use the following values for all generated test cases:\n"
         f"   - Status: '{DEFAULT_STATUS}'\n"
         f"   - Estimated Time: '{DEFAULT_ESTIMATED_TIME}'\n"
         f"   - Automation: '{DEFAULT_AUTOMATION}'\n"
-        # INSTRUKSI PENTING DIPERKUAT:
-        f"   - Labels: '{default_labels}' (You MUST use this exact value for ALL rows in the Labels column.)\n"
-        f"   - Coverage (Issues): '{default_coverage}' (You MUST use this exact value for ALL rows in the Coverage (Issues) column.)\n"
+        # DEFAULT BARU DARI INPUT USER
+        f"   - Labels: '{default_labels}' (Gunakan nilai ini untuk semua baris jika Labels tidak diminta secara spesifik di prompt)\n"
+        f"   - Coverage (Issues): '{default_coverage}' (Gunakan nilai ini untuk semua baris jika Coverage tidak diminta secara spesifik di prompt)\n"
         
         # PERUBAHAN UTAMA UNTUK FORMAT NAMA
-        f"4. Name Format (STRICT): The Name column MUST STRICTLY follow the format: [Positive/Negative]-[{final_platform_tag}]-[{project_acronym_tag}][{action_tag}] - [Description]. "
-        f"The platform tag MUST be '{final_platform_tag}' (which is dynamically determined by the user's selection). "
-        f"The tag '{{project_acronym_tag}}' MUST be replaced by the acronym found in the documents (e.g., 'DPIA', 'RoPA', 'CISO', etc.) atau derived from the prompt. "
-        f"The tag '{{action_tag}}' MUST be replaced by the feature atau menu action being tested. "
-        f"The first character of the 'Name' column MUST be '[' (opening square bracket). \n"
+        f"4. **Name Format (STRICT):** The Name column MUST STRICTLY follow the format: [Positive/Negative]-[{final_platform_tag}]-[{project_acronym_tag}][{action_tag}] - [Description]. "
+        f"**IMPORTANT:** The platform tag MUST be **'{final_platform_tag}'** (which is dynamically determined by the user's selection). "
+        f"The tag '{{project_acronym_tag}}' MUST be replaced by the acronym found in the documents (e.g., 'DPIA', 'RoPA', 'CISO', etc.) or derived from the prompt. "
+        f"The tag '{{action_tag}}' MUST be replaced by the feature or menu action being tested. "
+        f"The first character of the 'Name' column MUST be '[' (opening square bracket). "
         
-        # INSTRUKSI KAPITALISASI (Revisi 1)
-        "4a. Name Description Capitalization: The Description part (after the hyphen '-') MUST use a precise Title Case. Capitalize the first word and all major words (nouns, verbs, adjectives, adverbs), but KEEP all short prepositions (e.g., 'to', 'with', 'as', 'for', 'of'), articles ('a', 'an', 'the'), and conjunctions ('and', 'or', 'but') in **lowercase**, unless they are the first word. For example, 'Able to create RoPA as DPO Officer with all mandatory fields' must be formatted as: 'Able to Create RoPA as DPO Officer with All Mandatory Fields'. Maintain this capitalization style rigorously.\n"
+        f"Example (Positive): '[Positive]-[{final_platform_tag}]-[DPIA][Download] - Able to Download DPIA Document'. "
+        f"Example (Negative): '[Negative]-[{final_platform_tag}]-[RoPA][ViewList] - Unable to view RoPA list without proper role'.\n"
 
-        "4b. Name Punctuation: The description part in the 'Name' column MUST NOT end with a period (titik) atau any trailing punctuation.\n"
+        "4a. **Name Punctuation:** The description part in the 'Name' column MUST NOT end with a period (titik) atau any trailing punctuation.\n"
+
+        "5. **Test Type:** This column MUST be either 'Positive' or 'Negative', matching the Name prefix.\n"
         
-        "5. Test Type: This column MUST be either 'Positive' atau 'Negative', matching the Name prefix.\n"
-        
-        # INSTRUKSI KRUSIAL UNTUK MENCEGAH PERGESERAN KOLOM DAN HEADER GANDA (Revisi 2)
-        "6. CSV Structure (STRICT QUOTING & SINGLE HEADER): Use double quotes (\") to enclose text for columns that might contain commas or newlines (specifically 'Precondition' and 'Test Script (BDD)'). This is crucial to prevent data from shifting columns in Excel/Sheets. The first line MUST be the header row. **DO NOT repeat the header row. The header MUST only appear once as the very first line.**"
+        # INSTRUKSI KRUSIAL UNTUK MENCEGAH PERGESERAN KOLOM
+        "6. **CSV Structure (STRICT QUOTING):** Use **double quotes (\"**)** to enclose text for columns that might contain commas or newlines (specifically **'Precondition'** and **'Test Script (BDD)'**). **This is crucial to prevent data from shifting columns in Excel/Sheets.** The first line MUST be the header row."
 
         # INSTRUKSI UNTUK BDD MINIMAL DAN FOKUS PADA GIVEN/WHEN/THEN
-        "7. Test Script (BDD) Format (MINIMAL): The 'Test Script (BDD)' column MUST ONLY contain the step definitions (Given, When, Then, And, But). DO NOT include the 'Scenario:' keyword. Each test case must be a single block of steps, starting with Given, followed by When, and ending with Then. Use And atau But to chain additional steps within the single block. The structure must be: ONE 'Given', ONE 'When', ONE 'Then'. The steps MUST be concise; DO NOT include long, specific valid data values (e.g., 'with document ID PB-1234-A-2025' atau 'with name Budi and email budi@test.com'); abstract the data (e.g., 'with a valid document ID' atau 'with valid user credentials'). Focus on the high-level action and outcome."
+        "7. **Test Script (BDD) Format (MINIMAL):** The 'Test Script (BDD)' column MUST ONLY contain the step definitions (**Given, When, Then, And, But**). DO NOT include the **'Scenario:'** keyword. Each test case must be a single block of steps, starting with **Given**, followed by **When**, and ending with **Then**. Use **And** atau **But** to chain additional steps within the single block. The structure must be: ONE 'Given', ONE 'When', ONE 'Then'. **The steps MUST be concise; DO NOT include long, specific valid data values (e.g., 'with document ID PB-1234-A-2025' or 'with name Budi and email budi@test.com'); abstract the data (e.g., 'with a valid document ID' or 'with valid user credentials'). Focus on the high-level action and outcome.**"
         
-        "8. BDD Wording Consistency: All occurrences of the first-person pronoun 'I' (including 'I am', 'I want', 'I click', etc.) in the 'Test Script (BDD)' column MUST be replaced with the subject 'the user'. For example, 'Given I am logged in' becomes 'Given the user is logged in' atau 'Given the user logs in'. Ensure all subsequent verbs are grammatically correct when using 'the user' (singular third person)."
-        "9. RAW OUTPUT: The final output MUST be the raw CSV string and MUST NOT be enclosed within any Markdown code block delimiters (triple backticks, i.e., ```). The first character of the output MUST be the quote (\") atau the first letter of the header column 'Name'. **DO NOT add any introductory text atau explanation before or after the CSV.**"
+        "8. **BDD Wording Consistency:** All occurrences of the first-person pronoun **'I'** (including 'I am', 'I want', 'I click', etc.) in the 'Test Script (BDD)' column **MUST** be replaced with the subject **'the user'**. For example, 'Given I am logged in' becomes **'Given the user is logged in'** or **'Given the user logs in'**. Ensure all subsequent verbs are grammatically correct when using 'the user' (singular third person)."
+        "9. **RAW OUTPUT:** The final output MUST be the raw CSV string and **MUST NOT** be enclosed within any Markdown code block delimiters (triple backticks, i.e., ```). The first character of the output MUST be the quote (\") or the first letter of the header column 'Name'."
        
         "\nAnalyze the provided documents and the user's Acceptance Criteria (AC) carefully to generate the necessary content for the Precondition, Objective, Labels, and Test Script (BDD), strictly adhering to all rules."
     )
@@ -317,76 +256,8 @@ def generate_test_cases_with_ai(
             end_time_seconds = time.time()
             duration_seconds = end_time_seconds - start_time_seconds
             
-            raw_csv_text = response.text.strip()
-            
-            # --- START PERBAIKAN LOGIKA PEMBERSIHAN CSV ---
-            
-            # 1. Hapus markdown code block delimiters (```csv atau ```)
-            raw_csv_text = re.sub(r'```(?:csv)?\s*', '', raw_csv_text, flags=re.IGNORECASE).strip()
-
-            lines = [line.strip() for line in raw_csv_text.split('\n') if line.strip()]
-            
-            if len(lines) > 1:
-                
-                # Coba tentukan header yang valid dari baris pertama
-                potential_header_line = lines[0]
-                
-                # Gunakan csv.reader untuk parsing line pertama, dan rebuild string header agar konsisten
-                # Ini diperlukan karena Gemini kadang-kadang menggunakan quoting yang tidak konsisten
-                try:
-                    header_reader = csv.reader(io.StringIO(potential_header_line))
-                    parsed_header = next(header_reader)
-                    # Rebuild header string dengan quoting yang minimal dan koma standar
-                    output_io_header = io.StringIO()
-                    header_writer = csv.writer(output_io_header, quoting=csv.QUOTE_MINIMAL)
-                    header_writer.writerow(parsed_header)
-                    # Header yang sudah divalidasi dan diformat ulang (tanpa newline di akhir)
-                    expected_header = output_io_header.getvalue().strip() 
-
-                except Exception:
-                    # Jika parsing line pertama gagal, gunakan line aslinya sebagai fallback (kurang ideal)
-                    expected_header = potential_header_line 
-                    
-                # Sekarang bersihkan semua baris duplikat header
-                filtered_lines = [expected_header] # Baris pertama adalah header yang sudah diformat
-                
-                # Iterasi mulai dari baris kedua (indeks 1)
-                for line in lines[1:]:
-                    # Re-parse dan re-format setiap baris data untuk perbandingan
-                    try:
-                        temp_io = io.StringIO()
-                        writer = csv.writer(temp_io, quoting=csv.QUOTE_MINIMAL)
-                        
-                        # Coba parse line sebagai baris CSV
-                        row = next(csv.reader(io.StringIO(line)))
-                        writer.writerow(row)
-                        formatted_line = temp_io.getvalue().strip()
-                        
-                        # Hanya tambahkan baris yang BUKAN merupakan duplikasi header yang sudah diformat
-                        if formatted_line != expected_header:
-                            filtered_lines.append(line) # Tambahkan baris asli (lebih aman)
-                            
-                    except Exception:
-                        # Jika baris tidak bisa di-parse (misalnya baris kosong atau error), abaikan
-                        continue
-                        
-                final_csv_output = '\n'.join(filtered_lines)
-            else:
-                final_csv_output = raw_csv_text
-            
-            # --- END PERBAIKAN LOGIKA PEMBERSIHAN CSV ---
-            
-            # 2. ENFORCE METADATA TAMBAHAN
-            processed_csv_output = final_csv_output
-            if "[ERROR]" not in final_csv_output:
-                processed_csv_output = enforce_metadata_on_csv(
-                    final_csv_output, 
-                    default_labels, 
-                    default_coverage
-                )
-            
             # Mengembalikan tag yang diekstrak (atau default)
-            return processed_csv_output, start_time_str, duration_seconds, project_acronym_tag, action_tag
+            return response.text, start_time_str, duration_seconds, project_acronym_tag, action_tag
             
         except Exception as e:
             st.error(f"Gagal memanggil Gemini API: {e}") 
@@ -400,7 +271,7 @@ def delete_uploaded_files(client: genai.Client, files: list):
         except Exception:
             pass 
 
-# --- STREAMLIT INTERFACE (TIDAK BERUBAH) ---
+# --- STREAMLIT INTERFACE ---
 
 st.set_page_config(page_title="AuraTest (Zephyr-Gherkin)", layout="wide")
 
@@ -444,7 +315,7 @@ if 'api_key_valid' not in st.session_state:
             st.session_state['api_key_error_message'] = "API key tidak valid!"
     else:
         st.session_state['api_key_valid'] = False
-        st.session_state['api_key_error_message'] = None 
+        st.session_state['api_key_error_message'] = None # PENTING: Hapus pesan di awal jika kosong
 # --- AKHIR LOGIKA INISIALISASI VALIDASI API KEY DENGAN REVISI ---
 
 
@@ -530,7 +401,7 @@ st.title("AuraTest *(Zephyr-Gherkin)*")
 # --- INFORMASI VALIDASI API KEY DI UTAMA ---
 if not st.session_state.api_key_valid and not is_disabled_on_process_or_result:
     # Pesan umum muncul selama API key belum valid
-    st.warning("⚠️ Mohon masukkan API key Anda di sidebar dan tekan Enter atau ngeklik di luar untuk mengaktifkan input dan tombol lainnya.")
+    st.warning("⚠️ **Mohon masukkan API key Anda di sidebar dan tekan Enter atau ngeklik di luar** untuk mengaktifkan input dan tombol lainnya.")
 # --- AKHIR INFORMASI VALIDASI API KEY ---
 
 # --- PENAMBAHAN SELECT BOX UNTUK PLATFORM (DIPINDAHKAN KE SINI) ---
@@ -633,16 +504,16 @@ if st.button("🚀 Generate Test Cases", type="primary", use_container_width=Tru
     # 1. Validasi API Key (hanya cek status)
     if not st.session_state.api_key_valid:
         # Tampilkan error API Key secara mencolok di body utama juga
-        st.error("❌ Validasi Gagal: Mohon masukkan dan validasi Kunci API Gemini di sidebar terlebih dahulu.")
+        st.error("❌ **Validasi Gagal:** Mohon masukkan dan validasi Kunci API Gemini di sidebar terlebih dahulu.")
         st.stop()
     
     # 2. Validasi Dokumen Pendukung
     if not uploaded_files:
-        validation_errors['files'] = "Wajib Diisi"
+        validation_errors['files'] = "**Wajib Diisi**"
 
     # 3. Validasi Prompt
     if not user_prompt.strip():
-        validation_errors['prompt'] = "Wajib Diisi"
+        validation_errors['prompt'] = "**Wajib Diisi**"
     
     # 4. Tampilkan pesan kesalahan jika ada
     if validation_errors:
@@ -670,7 +541,7 @@ if st.session_state.is_generating:
     
     # Cek ulang untuk safety, walaupun sudah divalidasi
     if client == "INVALID_KEY" or client is None:
-        st.error("❌ Kesalahan internal: Kunci API terdeteksi tidak valid saat proses berjalan. Proses dihentikan.")
+        st.error("❌ **Kesalahan internal:** Kunci API terdeteksi tidak valid saat proses berjalan. Proses dihentikan.")
         st.session_state.is_generating = False
         st.rerun() 
     
@@ -687,8 +558,8 @@ if st.session_state.is_generating:
                     st.session_state['user_prompt_content'], # Gunakan versi dari state
                     gemini_files, 
                     st.session_state['platform_tag'],
-                    st.session_state['default_labels'],     # Parameter Labels
-                    st.session_state['default_coverage']    # Parameter Coverage
+                    st.session_state['default_labels'],     # Parameter Baru
+                    st.session_state['default_coverage']    # Parameter Baru
                 )
                 
                 if "[ERROR]" not in csv_result:
@@ -726,9 +597,9 @@ if st.session_state.csv_result:
     st.markdown(f"""
     | Metrik | Detail |
     | :--- | :--- |
-    | Jumlah Test Cases | `{metadata['num_test_cases']}` |
-    | Waktu Mulai Generate | `{metadata['start_time']}` |
-    | Durasi Proses | `{metadata['duration']}` |
+    | **Jumlah Test Cases** | `{metadata['num_test_cases']}` |
+    | **Waktu Mulai Generate** | `{metadata['start_time']}` |
+    | **Durasi Proses** | `{metadata['duration']}` |
     """, unsafe_allow_html=True)
     
     st.success("Yuhuuuuu, Test Cases berhasil dibuat")
