@@ -785,3 +785,5 @@ if st.session_state.csv_result:
             st.rerun() 
 
     st.code(st.session_state.csv_result, language='csv')
+
+    #streamlit run aitcgen.py
